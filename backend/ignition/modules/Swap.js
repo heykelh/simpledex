@@ -22,5 +22,14 @@ module.exports = buildModule("SwapModule", (m) => {
     id: "SwapDEXContract"
   });
 
-  return { tokenA, tokenB, swap };
+  const maliciousReentrancy = m.contract("MaliciousReentrancyContract", [
+    swap,    // Utiliser directement le contrat swap déployé
+    tokenA,  // Utiliser directement le token A déployé
+    tokenB   // Utiliser directement le token B déployé
+  ], {
+    id: "MaliciousReentrancyContract"
+  });
+
+  return { tokenA, tokenB, swap, maliciousReentrancy };
+
 });

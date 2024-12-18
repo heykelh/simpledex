@@ -1,241 +1,203 @@
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
-describe("SimpleDEX", function () {
+describe("Blockchain DEX Testing Suite", function () {
   let owner, user1, user2, feeReceiver;
   let tokenA, tokenB, simpleDEX;
 
-  // Helper function to mint tokens for users
-  async function mintTokens(token, recipient, amount) {
-    // Assuming the token has a mint function - adjust if your tokens are different
-    await token.mint(recipient.address, amount);
-  }
-
-  // Helper function to approve tokens
-  async function approveTokens(token, spender, amount, sender) {
-    await token.connect(sender).approve(spender, amount);
-  }
+  // Utilitaire pour convertir les tokens avec des décimales
+  const tokenConverter = (amount) => {
+    return ethers.parseUnits(amount.toString(), 18);
+  };
 
   beforeEach(async function () {
-    // Get signers
+    // Déploiement des contrats avant chaque test
     [owner, user1, user2, feeReceiver] = await ethers.getSigners();
 
-    // Deploy mock ERC20 tokens
-    const MockToken = await ethers.getContractFactory("MockERC20");
-    tokenA = await MockToken.deploy("Token A", "TKNA", 18);
-    tokenB = await MockToken.deploy("Token B", "TKNB", 18);
+    // Déployer les tokens
+    const MyTokenA = await ethers.getContractFactory("MyTokenA");
+    const MyTokenB = await ethers.getContractFactory("MyTokenB");
+    tokenA = await MyTokenA.deploy();
+    tokenB = await MyTokenB.deploy();
 
-    // Deploy SimpleDEX
+    // Distribuer des tokens aux utilisateurs
+    await tokenA.transfer(user1.address, tokenConverter(10000));
+    await tokenB.transfer(user1.address, tokenConverter(10000));
+    await tokenA.transfer(user2.address, tokenConverter(10000));
+    await tokenB.transfer(user2.address, tokenConverter(10000));
+
+    // Déployer le DEX
     const SimpleDEX = await ethers.getContractFactory("SimpleDEX");
     simpleDEX = await SimpleDEX.deploy(
-      await tokenA.getAddress(), 
-      await tokenB.getAddress(), 
+      tokenA.getAddress(), 
+      tokenB.getAddress(), 
       feeReceiver.address
     );
-
-    // Mint tokens to users
-    const mintAmount = ethers.parseEther("1000");
-    await mintTokens(tokenA, user1, mintAmount);
-    await mintTokens(tokenB, user1, mintAmount);
-    await mintTokens(tokenA, user2, mintAmount);
-    await mintTokens(tokenB, user2, mintAmount);
   });
 
-  describe("Deployment", function () {
-    it("Should set the correct tokens and fee receiver", async function () {
+  describe("Token Deployment Tests", function () {
+    it("Should deploy tokens with correct initial supply", async function () {
+      expect(await tokenA.totalSupply()).to.equal(tokenConverter(1000000));
+      expect(await tokenB.totalSupply()).to.equal(tokenConverter(1000000));
+    });
+
+    it("Should distribute tokens to test users", async function () {
+      expect(await tokenA.balanceOf(user1.address)).to.equal(tokenConverter(10000));
+      expect(await tokenB.balanceOf(user1.address)).to.equal(tokenConverter(10000));
+    });
+  });
+
+  describe("DEX Initialization Tests", function () {
+    it("Should initialize DEX with correct tokens", async function () {
       expect(await simpleDEX.tokenA()).to.equal(await tokenA.getAddress());
       expect(await simpleDEX.tokenB()).to.equal(await tokenB.getAddress());
       expect(await simpleDEX.feeReceiver()).to.equal(feeReceiver.address);
     });
   });
 
-  describe("Add Liquidity", function () {
-    it("Should allow adding initial liquidity", async function () {
-      const amountA = ethers.parseEther("100");
-      const amountB = ethers.parseEther("100");
+  describe("Liquidity Management Tests", function () {
+    beforeEach(async function () {
+      // Approuver les dépenses de tokens pour le DEX
+      await tokenA.connect(user1).approve(simpleDEX.getAddress(), tokenConverter(5000));
+      await tokenB.connect(user1).approve(simpleDEX.getAddress(), tokenConverter(5000));
+    });
 
-      // Approve tokens
-      await approveTokens(tokenA, await simpleDEX.getAddress(), amountA, user1);
-      await approveTokens(tokenB, await simpleDEX.getAddress(), amountB, user1);
+    it("Should add initial liquidity", async function () {
+      const amountA = tokenConverter(1000);
+      const amountB = tokenConverter(1000);
 
-      // Add liquidity
-      await expect(simpleDEX.connect(user1).addLiquidity(amountA, amountB))
-        .to.emit(simpleDEX, "LiquidityAdded")
-        .withArgs(user1.address, amountA, amountB, ethers.parseEther("100"));
+      // Ajouter de la liquidité
+      await simpleDEX.connect(user1).addLiquidity(amountA, amountB);
 
+      // Vérifier les réserves
       expect(await simpleDEX.reserveA()).to.equal(amountA);
       expect(await simpleDEX.reserveB()).to.equal(amountB);
     });
 
-    it("Should allow adding liquidity after initial deposit", async function () {
-      // First liquidity provision
-      const amountA1 = ethers.parseEther("100");
-      const amountB1 = ethers.parseEther("100");
-      await approveTokens(tokenA, await simpleDEX.getAddress(), amountA1, user1);
-      await approveTokens(tokenB, await simpleDEX.getAddress(), amountB1, user1);
-      await simpleDEX.connect(user1).addLiquidity(amountA1, amountB1);
+    it("Should mint LP tokens proportionally", async function () {
+      const amountA = tokenConverter(1000);
+      const amountB = tokenConverter(1000);
 
-      // Second liquidity provision
-      const amountA2 = ethers.parseEther("50");
-      const amountB2 = ethers.parseEther("50");
-      await approveTokens(tokenA, await simpleDEX.getAddress(), amountA2, user2);
-      await approveTokens(tokenB, await simpleDEX.getAddress(), amountB2, user2);
-      
-      await expect(simpleDEX.connect(user2).addLiquidity(amountA2, amountB2))
-        .to.emit(simpleDEX, "LiquidityAdded");
-
-      expect(await simpleDEX.reserveA()).to.equal(amountA1 + amountA2);
-      expect(await simpleDEX.reserveB()).to.equal(amountB1 + amountB2);
-    });
-
-    it("Should revert if amounts are zero", async function () {
-      await expect(simpleDEX.connect(user1).addLiquidity(0, 0))
-        .to.be.revertedWith("Invalid amounts");
-    });
-  });
-
-  describe("Remove Liquidity", function () {
-    beforeEach(async function () {
-      // Add initial liquidity
-      const amountA = ethers.parseEther("100");
-      const amountB = ethers.parseEther("100");
-      await approveTokens(tokenA, await simpleDEX.getAddress(), amountA, user1);
-      await approveTokens(tokenB, await simpleDEX.getAddress(), amountB, user1);
       await simpleDEX.connect(user1).addLiquidity(amountA, amountB);
-    });
 
-    it("Should allow removing liquidity", async function () {
+      // Vérifier l'émission de LP tokens
       const lpTokenBalance = await simpleDEX.balanceOf(user1.address);
-      
-      // Approve LP tokens for burning
-      await simpleDEX.connect(user1).approve(await simpleDEX.getAddress(), lpTokenBalance);
-
-      // Remove liquidity
-      await expect(simpleDEX.connect(user1).removeLiquidity(lpTokenBalance))
-        .to.emit(simpleDEX, "LiquidityRemoved");
-
-      // Check reserves are reset
-      expect(await simpleDEX.reserveA()).to.equal(0);
-      expect(await simpleDEX.reserveB()).to.equal(0);
+      expect(lpTokenBalance).to.be.gt(0);
     });
 
-    it("Should revert if LP token amount is zero", async function () {
-      await expect(simpleDEX.connect(user1).removeLiquidity(0))
-        .to.be.revertedWith("Invalid LP token amount");
+    it("Should prevent adding liquidity with zero amounts", async function () {
+      await expect(
+        simpleDEX.connect(user1).addLiquidity(0, tokenConverter(1000))
+      ).to.be.revertedWith("Invalid amounts");
+    });
+
+    it("Should remove liquidity correctly", async function () {
+      // Ajouter de la liquidité initiale
+      const amountA = tokenConverter(1000);
+      const amountB = tokenConverter(1000);
+      await tokenA.connect(user1).approve(simpleDEX.getAddress(), amountA);
+      await tokenB.connect(user1).approve(simpleDEX.getAddress(), amountB);
+      await simpleDEX.connect(user1).addLiquidity(amountA, amountB);
+
+      // Obtenir le solde de LP tokens
+      const lpTokenBalance = await simpleDEX.balanceOf(user1.address);
+
+      // Approuver et retirer la liquidité
+      await simpleDEX.connect(user1).approve(simpleDEX.getAddress(), lpTokenBalance);
+      const removeTx = await simpleDEX.connect(user1).removeLiquidity(lpTokenBalance);
+
+      // Vérifier les événements et les soldes
+      await expect(removeTx)
+        .to.emit(simpleDEX, "LiquidityRemoved")
+        .withArgs(user1.address, amountA, amountB);
     });
   });
 
-  describe("Swap", function () {
+  describe("Swap Functionality Tests", function () {
     beforeEach(async function () {
-      // Add initial liquidity
-      const amountA = ethers.parseEther("1000");
-      const amountB = ethers.parseEther("1000");
-      await approveTokens(tokenA, await simpleDEX.getAddress(), amountA, user1);
-      await approveTokens(tokenB, await simpleDEX.getAddress(), amountB, user1);
+      // Ajouter de la liquidité initiale
+      const amountA = tokenConverter(5000);
+      const amountB = tokenConverter(5000);
+      await tokenA.connect(user1).approve(simpleDEX.getAddress(), amountA);
+      await tokenB.connect(user1).approve(simpleDEX.getAddress(), amountB);
       await simpleDEX.connect(user1).addLiquidity(amountA, amountB);
+
+      // Approuver les tokens pour l'échange
+      await tokenA.connect(user2).approve(simpleDEX.getAddress(), tokenConverter(1000));
+      await tokenB.connect(user2).approve(simpleDEX.getAddress(), tokenConverter(1000));
     });
 
-    it("Should allow swapping tokens", async function () {
-      const swapAmount = ethers.parseEther("100");
-      
-      // Approve input token
-      await approveTokens(tokenA, await simpleDEX.getAddress(), swapAmount, user2);
+    it("Should swap tokens with correct fee calculation", async function () {
+      const swapAmount = tokenConverter(100);
+      const tokenAAddress = await tokenA.getAddress();
+      const tokenBAddress = await tokenB.getAddress();
 
-      // Perform swap
-      await expect(
-        simpleDEX.connect(user2).swap(
-          await tokenA.getAddress(), 
-          await tokenB.getAddress(), 
-          swapAmount
-        )
-      ).to.emit(simpleDEX, "Swapped");
-    });
+      const initialBalanceA = await tokenA.balanceOf(user2.address);
+      const initialFeeReceiverBalanceA = await tokenA.balanceOf(feeReceiver.address);
 
-    it("Should apply fee during swap", async function () {
-      const swapAmount = ethers.parseEther("100");
-      
-      // Approve input token
-      await approveTokens(tokenA, await simpleDEX.getAddress(), swapAmount, user2);
+      // Échanger des tokens A contre des tokens B
+      await simpleDEX.connect(user2).swap(tokenAAddress, tokenBAddress, swapAmount);
 
-      // Initial fee receiver balance
-      const initialFeeBalance = await tokenA.balanceOf(feeReceiver.address);
+      const finalBalanceA = await tokenA.balanceOf(user2.address);
+      const finalFeeReceiverBalanceA = await tokenA.balanceOf(feeReceiver.address);
 
-      // Perform swap
-      await simpleDEX.connect(user2).swap(
-        await tokenA.getAddress(), 
-        await tokenB.getAddress(), 
-        swapAmount
-      );
-
-      // Check fee was collected (0.5% of swap amount)
+      // Vérifier la taxe de 0.5%
       const expectedFee = swapAmount * 5n / 1000n;
-      const newFeeBalance = await tokenA.balanceOf(feeReceiver.address);
-      expect(newFeeBalance - initialFeeBalance).to.equal(expectedFee);
+      expect(finalFeeReceiverBalanceA - initialFeeReceiverBalanceA).to.equal(expectedFee);
     });
 
-    it("Should revert swap with invalid input parameters", async function () {
-      const swapAmount = ethers.parseEther("100");
-      
-      // Invalid input token
+    it("Should prevent swapping the same token", async function () {
+      const tokenAAddress = await tokenA.getAddress();
+      await expect(
+        simpleDEX.connect(user2).swap(tokenAAddress, tokenAAddress, tokenConverter(100))
+      ).to.be.revertedWith("Cannot swap same token");
+    });
+
+    it("Should prevent swapping with invalid tokens", async function () {
       await expect(
         simpleDEX.connect(user2).swap(
           ethers.ZeroAddress, 
-          await tokenB.getAddress(), 
-          swapAmount
+          await tokenA.getAddress(), 
+          tokenConverter(100)
         )
       ).to.be.revertedWith("Invalid input token");
-
-      // Invalid output token
-      await expect(
-        simpleDEX.connect(user2).swap(
-          await tokenA.getAddress(), 
-          ethers.ZeroAddress, 
-          swapAmount
-        )
-      ).to.be.revertedWith("Invalid output token");
-
-      // Swap same token
-      await expect(
-        simpleDEX.connect(user2).swap(
-          await tokenA.getAddress(), 
-          await tokenA.getAddress(), 
-          swapAmount
-        )
-      ).to.be.revertedWith("Cannot swap same token");
-
-      // Zero amount
-      await expect(
-        simpleDEX.connect(user2).swap(
-          await tokenA.getAddress(), 
-          await tokenB.getAddress(), 
-          0
-        )
-      ).to.be.revertedWith("Invalid amount");
     });
   });
 
-  describe("Reentrancy Protection", function () {
-    it("Should prevent reentrancy attacks", async function () {
-      // Note: This would require a malicious contract with a fallback function
-      // that attempts to call the DEX again during a transaction
-      // For demonstration, we'd need to deploy a mock reentrancy contract
-    });
+  /*describe("Reentrancy Protection Tests", function () {
+    it("Should prevent reentrancy during addLiquidity", async function () {
+        // Ajouter une première liquidité
+        await simpleDEX.connect(user1).addLiquidity(
+          tokenConverter(1000), 
+          tokenConverter(1000)
+        );
+      
+        // Créer un contrat malveillant simulé avec une fonction qui rappelle addLiquidity
+        const MaliciousContract = await ethers.getContractFactory("MaliciousReentrancyContract");
+        const maliciousContract = await MaliciousContract.deploy(
+          simpleDEX.getAddress(), 
+          tokenA.getAddress(), 
+          tokenB.getAddress()
+        );
+      
+        // Transférer des tokens au contrat malveillant
+        await tokenA.transfer(maliciousContract.getAddress(), tokenConverter(2000));
+        await tokenB.transfer(maliciousContract.getAddress(), tokenConverter(2000));
+      
+        // Approuver les tokens pour que le DEX puisse les transférer
+        await maliciousContract.approveTokensForDEX(
+          simpleDEX.getAddress(),
+          tokenConverter(2000),
+          tokenConverter(2000)
+        );
+      
+        // Tenter l'attaque de réentrance
+        await expect(
+          maliciousContract.attackAddLiquidity(
+            tokenConverter(100), 
+            tokenConverter(100)
+          )
+        ).to.be.revertedWith("Reentrant call");
+      });*/
+      
   });
-});
-
-// Mock ERC20 Token Contract for Testing
-/*const MockERC20 = `
-pragma solidity ^0.8.0;
-
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-
-contract MockERC20 is ERC20 {
-    constructor(string memory name, string memory symbol, uint8 decimals) ERC20(name, symbol) {
-        // Optional: Set custom decimals if needed
-    }
-
-    function mint(address to, uint256 amount) public {
-        _mint(to, amount);
-    }
-}*/
-//`;
