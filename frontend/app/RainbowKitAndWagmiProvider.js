@@ -1,5 +1,5 @@
+'use client';
 import '@rainbow-me/rainbowkit/styles.css';
-
 import {
   getDefaultConfig,
   RainbowKitProvider,
@@ -7,7 +7,8 @@ import {
 import { WagmiProvider } from 'wagmi';
 import {
   hardhat,
-  sepolia
+  sepolia,
+  baseSepolia,
 } from 'wagmi/chains';
 import {
   QueryClientProvider,
@@ -17,22 +18,22 @@ import {
 const config = getDefaultConfig({
     appName: 'My RainbowKit App',
     projectId: '4489b42c961ba6584ce52f1aa3027935',
-    chains: [hardhat, sepolia],
+    chains: [hardhat, sepolia, baseSepolia],
     ssr: true, // If your dApp uses server side rendering (SSR)
   });
 
-  const queryClient = new QueryClient();
+const queryClient = new QueryClient();
 
 const RainbowKitAndWagmiProvider = ({ children }) => {
-  return (
-    <WagmiProvider config={config}>
-        <QueryClientProvider client={queryClient}>
-            <RainbowKitProvider>
-                {children}
-            </RainbowKitProvider>
-        </QueryClientProvider>
+    return (
+        <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider>
+          {children}
+        </RainbowKitProvider>
+      </QueryClientProvider>
     </WagmiProvider>
-  )
+    ) 
 }
 
-export default RainbowKitAndWagmiProvider
+export default RainbowKitAndWagmiProvider;
