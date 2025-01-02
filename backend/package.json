@@ -19,5 +19,18 @@
   "dependencies": {
     "@openzeppelin/contracts": "^5.0.0",
     "openzeppelin-solidity": "^4.0.0"
-  }
+  },
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.",
+  "main": "hardhat.config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }
