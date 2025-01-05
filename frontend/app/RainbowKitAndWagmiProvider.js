@@ -35,5 +35,5 @@ const RainbowKitAndWagmiProvider = ({ children }) => {
     </WagmiProvider>
     ) 
 }
-
 export default RainbowKitAndWagmiProvider;
+

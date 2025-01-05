@@ -1,0 +1,5 @@
+{
+  "SwapModule#TokenAContract": "0xd80b6694eE2F2D1FDcC370a2Ed9C7B2D8Dbc10f6",
+  "SwapModule#TokenBContract": "0x263d20eb702c89879b8bE5F17e3CaD069d866346",
+  "SwapModule#SwapDEXContract": "0xbE81aeA9FAf7B58b596fe44d529302c025B3Fce2"
+}
