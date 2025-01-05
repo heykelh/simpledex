@@ -42,6 +42,8 @@ const TOKEN_ABI = [
 
 const Swap = () => {
     const [loading, setLoading] = useState(false);
+    const [swapAmount, setSwapAmount] = useState('');
+    const [isSwapAToB, setIsSwapAToB] = useState(true);
     const { address, isConnected } = useAccount();
     const { toast } = useToast();
     const publicClient = usePublicClient();
@@ -65,6 +67,7 @@ const Swap = () => {
 
     const { writeContractAsync: mintTokens } = useWriteContract();
     const { writeContractAsync: approveTokens } = useWriteContract();
+    const { writeContractAsync: performSwap } = useWriteContract();
 
     const handleMintAndApprove = async () => {
         try {
@@ -152,6 +155,77 @@ const Swap = () => {
         }
     };
 
+    const handleSwap = async () => {
+        if (!swapAmount || parseFloat(swapAmount) <= 0) {
+            toast({
+                title: "Invalid Amount",
+                description: "Please enter a valid amount to swap",
+                variant: "destructive",
+            });
+            return;
+        }
+
+        try {
+            setLoading(true);
+            const amountToSwap = parseEther(swapAmount);
+            
+            // First approve the DEX to spend tokens
+            const sourceToken = isSwapAToB ? tokenAAddress : tokenBAddress;
+            const targetToken = isSwapAToB ? tokenBAddress : tokenAAddress;
+
+            const approveTx = await approveTokens({
+                address: sourceToken,
+                abi: TOKEN_ABI,
+                functionName: 'approve',
+                args: [contractAddress, amountToSwap],
+            });
+
+            toast({
+                title: "Approving Tokens",
+                description: "Please wait for approval to complete...",
+            });
+
+            await publicClient.waitForTransactionReceipt({ hash: approveTx });
+
+            // Perform the swap
+            const swapTx = await performSwap({
+                address: contractAddress,
+                abi: contractABI,
+                functionName: 'swap',
+                args: [sourceToken, targetToken, amountToSwap],
+            });
+
+            toast({
+                title: "Swapping Tokens",
+                description: "Please wait for swap to complete...",
+            });
+
+            await publicClient.waitForTransactionReceipt({ hash: swapTx });
+
+            toast({
+                title: "Swap Successful",
+                description: `Successfully swapped ${swapAmount} ${isSwapAToB ? 'Token A → Token B' : 'Token B → Token A'}`,
+            });
+
+            // Reset input and refresh balances
+            setSwapAmount('');
+            await Promise.all([
+                refetchBalanceA(),
+                refetchBalanceB()
+            ]);
+
+        } catch (err) {
+            console.error('Swap error:', err);
+            toast({
+                title: "Swap Failed",
+                description: err.message,
+                variant: "destructive",
+            });
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Log balances when they change
     useEffect(() => {
         if (address) {
@@ -176,6 +250,39 @@ const Swap = () => {
             >
                 {loading ? 'Processing...' : 'Mint & Approve 10,000 Tokens'}
             </Button>
+
+            {/* Swap Interface */}
+            <div className="p-4 border rounded-lg space-y-4 mt-4">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-lg font-medium">
+                        Swap {isSwapAToB ? 'A → B' : 'B → A'}
+                    </h3>
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsSwapAToB(!isSwapAToB)}
+                        disabled={loading}
+                    >
+                        🔄 Switch
+                    </Button>
+                </div>
+
+                <Input
+                    type="number"
+                    placeholder={`Enter amount of Token ${isSwapAToB ? 'A' : 'B'}`}
+                    value={swapAmount}
+                    onChange={(e) => setSwapAmount(e.target.value)}
+                    disabled={loading || !isConnected}
+                />
+
+                <Button 
+                    onClick={handleSwap}
+                    disabled={loading || !isConnected || !swapAmount}
+                    className="w-full"
+                >
+                    {loading ? 'Processing...' : `Swap ${isSwapAToB ? 'A → B' : 'B → A'}`}
+                </Button>
+            </div>
         </div>
     );
 };
