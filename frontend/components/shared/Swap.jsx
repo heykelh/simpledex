@@ -134,7 +134,7 @@ const Swap = () => {
 
             toast({
                 title: "Success",
-                description: "Successfully minted and approved 10,000 of both tokens!",
+                description: "Successfully minted and approved both tokens!",
             });
 
             // Refresh balances
@@ -248,7 +248,7 @@ const Swap = () => {
                 disabled={loading || !isConnected}
                 className="w-full"
             >
-                {loading ? 'Processing...' : 'Mint & Approve 10,000 Tokens'}
+                {loading ? 'Processing...' : 'Mint & Approve Tokens'}
             </Button>
 
             {/* Swap Interface */}
